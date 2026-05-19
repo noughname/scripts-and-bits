@@ -2,13 +2,13 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Configuration — all settings can be overridden via environment variables
+# Configuration — all settings can be overridden via env vars or CLI flags
 # ---------------------------------------------------------------------------
 WSLK_KERNEL_REPO="${WSLK_KERNEL_REPO:-https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling}"
-WSLK_KERNEL_VERSION="${WSLK_KERNEL_VERSION:-wsl-7.0-rolling}"
+WSLK_KERNEL_VERSION="${WSLK_KERNEL_VERSION:-}"          # empty → auto-detected or prompted
 WSLK_OUTPUT_DIR="${WSLK_OUTPUT_DIR:-%USERPROFILE%\.wsl-kernel}"
 WSLK_ARCH="${WSLK_ARCH:-x86}"
-WSLK_KCONFIG_CONFIG="${WSLK_KCONFIG_CONFIG:-arch/${WSLK_ARCH}/configs/config-wsl-${WSLK_ARCH}-rt}"
+WSLK_KCONFIG_CONFIG="${WSLK_KCONFIG_CONFIG:-}"          # empty → derived from WSLK_ARCH in main()
 
 WSLK_SKIP_WSL_CHECK="${WSLK_SKIP_WSL_CHECK:-false}"
 WSLK_SKIP_DEPS="${WSLK_SKIP_DEPS:-false}"
@@ -18,11 +18,18 @@ WSLK_SKIP_MODULES_SCRIPT_CHECK="${WSLK_SKIP_MODULES_SCRIPT_CHECK:-false}"
 WSLK_SKIP_RESTART="${WSLK_SKIP_RESTART:-false}"
 WSLK_DRY_RUN="${WSLK_DRY_RUN:-false}"
 
-# Default clone target relative to cwd; set externally to override
-KERNEL_SRC_DIR="${KERNEL_SRC_DIR:-wsl-kernel-src}"
+# Clone target; defaults to /tmp to avoid home-directory permission issues
+KERNEL_SRC_DIR="${KERNEL_SRC_DIR:-/tmp/wsl-kernel}"
 
 # ---------------------------------------------------------------------------
-# Shared state — set by step functions, consumed by later steps or resolvers
+# Runtime flags — set by CLI args only
+# ---------------------------------------------------------------------------
+_STEP=""
+_YES="false"
+_NON_INTERACTIVE="false"
+
+# ---------------------------------------------------------------------------
+# Shared state — populated by resolvers, consumed by step functions
 # ---------------------------------------------------------------------------
 KERNEL_RELEASE=""
 KERNEL_NAME=""
@@ -30,9 +37,11 @@ MODULES_NAME=""
 MODULES_VHDX_PATH=""
 WIN_OUTPUT_DIR=""
 
-# Temporary paths registered for trap-based cleanup
+# Resource handles for trap-based cleanup
 _DOWNLOADED_SCRIPT=""
 _WSLCONFIG_TMP=""
+_SUDO_KEEPALIVE_PID=""
+_MODULES_BUILT="false"  # set to true after gen_modules_vhdx.sh runs
 
 # ---------------------------------------------------------------------------
 # Logging — RFC 3339 timestamps, colour-coded levels
@@ -49,13 +58,35 @@ log_warn()  { _log "WARN"  "\033[0;33m" "$@" >&2; }
 log_error() { _log "ERROR" "\033[0;31m" "$@" >&2; }
 
 # ---------------------------------------------------------------------------
-# Cleanup — registered via trap, removes any temp files created during the run
+# Cleanup — registered via trap
 # ---------------------------------------------------------------------------
 cleanup() {
+    # Stop sudo keepalive
+    if [[ -n "${_SUDO_KEEPALIVE_PID:-}" ]]; then
+        kill "$_SUDO_KEEPALIVE_PID" 2>/dev/null || true
+        _SUDO_KEEPALIVE_PID=""
+    fi
+    # Remove temp files
     [[ -n "${_DOWNLOADED_SCRIPT:-}" ]] && rm -f "$_DOWNLOADED_SCRIPT"
     [[ -n "${_WSLCONFIG_TMP:-}" ]]     && rm -f "$_WSLCONFIG_TMP"
+    # Clean up any stale tmp artefacts left by gen_modules_vhdx.sh (only if it ran)
+    if [[ "${_MODULES_BUILT:-false}" == "true" ]]; then
+        sudo find /tmp -maxdepth 2 -type f \( -name "modules.img" -o -name "modules_img" \) \
+            -exec sh -c 'sudo umount "$(dirname "$1")" 2>/dev/null
+                         sudo umount "$1"              2>/dev/null
+                         sudo rm -rf "$(dirname "$1")"' _ {} \; 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT
+
+# ---------------------------------------------------------------------------
+# Sudo keepalive — authenticate once and refresh every 55 s
+# ---------------------------------------------------------------------------
+start_sudo_keepalive() {
+    sudo -v
+    ( while true; do sleep 55; sudo -v 2>/dev/null; done ) &
+    _SUDO_KEEPALIVE_PID=$!
+}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -66,8 +97,6 @@ resolve_win_userprofile() {
 
 # Compute KERNEL_RELEASE (cached) and derive artifact names.
 # Safe to call multiple times — reuses the cached value after the first call.
-# Call this in any step that needs KERNEL_RELEASE, KERNEL_NAME, MODULES_NAME,
-# or MODULES_VHDX_PATH.
 resolve_build_names() {
     if [[ -z "$KERNEL_RELEASE" ]]; then
         if [[ ! -d "$KERNEL_SRC_DIR" ]]; then
@@ -82,13 +111,97 @@ resolve_build_names() {
 }
 
 # Resolve and cache the Windows output directory path.
-# Call this in any step that needs WIN_OUTPUT_DIR.
 resolve_win_output_dir() {
     if [[ -z "$WIN_OUTPUT_DIR" ]]; then
         local win_output_dir_expanded
         win_output_dir_expanded=$(cmd.exe /c "echo ${WSLK_OUTPUT_DIR}" 2>/dev/null | tr -d '\r\n')
         WIN_OUTPUT_DIR=$(wslpath -u "$win_output_dir_expanded")
         mkdir -p "$WIN_OUTPUT_DIR"
+    fi
+}
+
+# List branches from a remote repo matching a grep pattern, newest-first.
+fetch_available_versions() {
+    local repo="$1" pattern="${2:-^wsl-}"
+    local branches
+    branches=$(git ls-remote --heads "$repo" 2>/dev/null \
+        | awk '{print $2}' \
+        | sed 's|refs/heads/||' \
+        | grep "$pattern") || return 1
+    if echo "$branches" | sort -rV >/dev/null 2>&1; then
+        echo "$branches" | sort -rV
+    else
+        echo "$branches" | sort -r
+    fi
+}
+
+# Return the latest matching branch, or a hardcoded fallback on failure.
+detect_latest_version() {
+    local repo="$1"
+    local latest
+    latest=$(fetch_available_versions "$repo" "^wsl-" 2>/dev/null | head -1) || true
+    if [[ -z "$latest" ]]; then
+        log_warn "Could not detect latest version from $repo; using fallback"
+        echo "wsl-7.0-rolling"
+    else
+        echo "$latest"
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Interactive helpers
+# ---------------------------------------------------------------------------
+is_interactive() {
+    [[ "$_NON_INTERACTIVE" != "true" ]] && [[ -t 0 ]]
+}
+
+# Read text input with an optional default.
+# Usage: prompt_input <label> <varname> [default]
+prompt_input() {
+    local label="$1" varname="$2" default="${3:-}"
+    local value=""
+    if [[ -n "$default" ]]; then
+        read -r -p "  $label [$default]: " value
+        value="${value:-$default}"
+    else
+        read -r -p "  $label: " value
+    fi
+    printf -v "$varname" '%s' "$value"
+}
+
+# Ask a yes/no question. Returns 0 for yes, 1 for no.
+# Usage: prompt_yes_no <question> [default: y|n]
+prompt_yes_no() {
+    local question="$1" default="${2:-y}"
+    local answer=""
+    if [[ "$default" == "y" ]]; then
+        read -r -p "  $question [Y/n]: " answer
+        answer="${answer:-y}"
+    else
+        read -r -p "  $question [y/N]: " answer
+        answer="${answer:-n}"
+    fi
+    [[ "${answer,,}" == "y" || "${answer,,}" == "yes" ]]
+}
+
+# Display a numbered list and let the user pick one item.
+# Sets varname to the selected value; accepts a manual string if not a valid number.
+# Usage: prompt_select <label> <varname> <item1> <item2> ...
+prompt_select() {
+    local label="$1" varname="$2"
+    shift 2
+    local -a items=("$@")
+    local i
+    for (( i=0; i<${#items[@]}; i++ )); do
+        printf "    %2d) %s\n" $(( i+1 )) "${items[$i]}"
+    done
+    local choice=""
+    read -r -p "  $label [1]: " choice
+    choice="${choice:-1}"
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#items[@]} )); then
+        printf -v "$varname" '%s' "${items[$(( choice-1 ))]}"
+    else
+        printf -v "$varname" '%s' "$choice"
     fi
 }
 
@@ -100,18 +213,90 @@ check_wsl_environment() {
         log "Skipping WSL environment check"
         return 0
     fi
-    # Prefer WSL's injected wslinfo command when available.
+    # Primary: WSL-injected wslinfo binary (WSL2 with kernel ≥ 5.15.90)
     if [[ -x /usr/bin/wslinfo && -L /usr/bin/wslinfo ]]; then
         if /usr/bin/wslinfo --version >/dev/null 2>&1 \
             || /usr/bin/wslinfo --wsl-version >/dev/null 2>&1 \
             || /usr/bin/wslinfo --networking-mode >/dev/null 2>&1; then
             return 0
         fi
-        log_error "Detected /usr/bin/wslinfo, but WSL checks failed."
+        log_error "Detected /usr/bin/wslinfo but it returned an error — WSL environment may be broken."
         exit 1
     fi
+    # Fallback: binfmt_misc WSLInterop entry (present in all WSL2 environments)
+    if [[ -f /proc/sys/fs/binfmt_misc/WSLInterop ]]; then
+        return 0
+    fi
+    log_error "Not running inside WSL. Set WSLK_SKIP_WSL_CHECK=true to bypass this check."
+    exit 1
 }
 
+# ---------------------------------------------------------------------------
+# Interactive configuration
+# ---------------------------------------------------------------------------
+interactive_configure() {
+    echo ""
+    log "Interactive configuration — press Enter to accept the shown default"
+    echo ""
+
+    prompt_input "Kernel repo URL" WSLK_KERNEL_REPO "$WSLK_KERNEL_REPO"
+
+    echo ""
+    log "Fetching available branches from $WSLK_KERNEL_REPO..."
+    local -a versions=()
+    if mapfile -t versions < <(fetch_available_versions "$WSLK_KERNEL_REPO" "^wsl-" 2>/dev/null) \
+            && [[ ${#versions[@]} -gt 0 ]]; then
+        echo ""
+        log "Available branches:"
+        local default_idx=1
+        local i
+        for (( i=0; i<${#versions[@]}; i++ )); do
+            if [[ "${versions[$i]}" == "$WSLK_KERNEL_VERSION" ]]; then
+                default_idx=$(( i+1 ))
+            fi
+        done
+        for (( i=0; i<${#versions[@]}; i++ )); do
+            printf "    %2d) %s\n" $(( i+1 )) "${versions[$i]}"
+        done
+        local choice=""
+        read -r -p "  Select branch [$default_idx]: " choice
+        choice="${choice:-$default_idx}"
+        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#versions[@]} )); then
+            WSLK_KERNEL_VERSION="${versions[$(( choice-1 ))]}"
+        else
+            WSLK_KERNEL_VERSION="$choice"
+        fi
+    else
+        log_warn "Could not fetch branch list; enter version manually"
+        prompt_input "Kernel version / branch" WSLK_KERNEL_VERSION \
+            "${WSLK_KERNEL_VERSION:-wsl-7.0-rolling}"
+    fi
+
+    echo ""
+    prompt_input "Target architecture" WSLK_ARCH "$WSLK_ARCH"
+    prompt_input "Windows output directory" WSLK_OUTPUT_DIR "$WSLK_OUTPUT_DIR"
+    echo ""
+}
+
+# ---------------------------------------------------------------------------
+# Config summary
+# ---------------------------------------------------------------------------
+show_config_summary() {
+    echo ""
+    log "Build configuration:"
+    printf "    %-32s %s\n" "Kernel repo:"        "$WSLK_KERNEL_REPO"
+    printf "    %-32s %s\n" "Kernel version:"     "$WSLK_KERNEL_VERSION"
+    printf "    %-32s %s\n" "Architecture:"       "$WSLK_ARCH"
+    printf "    %-32s %s\n" "Kernel config:"      "$WSLK_KCONFIG_CONFIG"
+    printf "    %-32s %s\n" "Source dir:"         "$KERNEL_SRC_DIR"
+    printf "    %-32s %s\n" "Windows output dir:" "$WSLK_OUTPUT_DIR"
+    printf "    %-32s %s\n" "Dry run:"            "$WSLK_DRY_RUN"
+    echo ""
+}
+
+# ---------------------------------------------------------------------------
+# Step functions
+# ---------------------------------------------------------------------------
 install_deps() {
     if [[ "$WSLK_SKIP_DEPS" == "true" ]]; then
         log "Skipping dependency installation"
@@ -137,7 +322,7 @@ install_deps() {
             sudo dnf install -y gcc make flex bison openssl-devel elfutils-libelf-devel bc dwarves python3 git zstd qemu-img e2fsprogs diffutils depmod
             ;;
         *)
-            log_error "Unsupported distro: ${ID:-unknown}. Install build dependencies manually and set WSLK_SKIP_DEPS=true"
+            log_error "Unsupported distro: ${ID:-unknown}. Install dependencies manually and set WSLK_SKIP_DEPS=true"
             return 1
             ;;
     esac
@@ -154,8 +339,19 @@ clone_kernel_repo() {
         return 0
     fi
     if [[ -d "$KERNEL_SRC_DIR" ]]; then
-        log_warn "$KERNEL_SRC_DIR already exists; skipping clone. Delete it or set KERNEL_SRC_DIR to a new path to re-clone."
-        return 0
+        if is_interactive && [[ "$_YES" != "true" ]]; then
+            log_warn "$KERNEL_SRC_DIR already exists."
+            if prompt_yes_no "Delete and re-clone?" "n"; then
+                log "Removing $KERNEL_SRC_DIR..."
+                rm -rf "$KERNEL_SRC_DIR"
+            else
+                log "Keeping existing $KERNEL_SRC_DIR; skipping clone."
+                return 0
+            fi
+        else
+            log_warn "$KERNEL_SRC_DIR already exists; skipping clone. Delete it or set KERNEL_SRC_DIR to a new path to re-clone."
+            return 0
+        fi
     fi
     if [[ "$WSLK_DRY_RUN" == "true" ]]; then
         log "[DRY-RUN] Would clone $WSLK_KERNEL_REPO (branch: $WSLK_KERNEL_VERSION) into $KERNEL_SRC_DIR"
@@ -203,10 +399,10 @@ build_modules_vhdx() {
     log "Building modules vhdx..."
     local script="$KERNEL_SRC_DIR/Microsoft/scripts/gen_modules_vhdx.sh"
     if [[ "$WSLK_SKIP_MODULES_SCRIPT_CHECK" == "false" ]] && [[ ! -f "$script" ]]; then
-        log "gen_modules_vhdx.sh not found in repo; downloading from upstream..."
+        log "gen_modules_vhdx.sh not found in repo; downloading from official Microsoft WSL2 kernel repo..."
         _DOWNLOADED_SCRIPT=$(mktemp)
         curl -fsSL \
-            "https://raw.githubusercontent.com/Nevuly/WSL2-Linux-Kernel-Rolling/refs/heads/master/.github/scripts/gen_modules_vhdx.sh" \
+            "https://raw.githubusercontent.com/microsoft/WSL2-Linux-Kernel/refs/heads/linux-msft-wsl-6.6.y/Microsoft/scripts/gen_modules_vhdx.sh" \
             -o "$_DOWNLOADED_SCRIPT"
         script="$_DOWNLOADED_SCRIPT"
     fi
@@ -217,12 +413,10 @@ build_modules_vhdx() {
     fi
 
     # gen_modules_vhdx.sh requires root (losetup/mount/umount)
+    _MODULES_BUILT="true"
     sudo bash "$script" "$KERNEL_SRC_DIR/$modules_dir" "$KERNEL_RELEASE" "$MODULES_VHDX_PATH" || return 1
     log "Modules vhdx built: $MODULES_VHDX_PATH"
-
-    log "Cleaning up /tmp directories..."
-    sudo find /tmp -maxdepth 2 -type f \( -name "modules.img" -o -name "modules_img" \) \
-        -exec sh -c 'sudo umount "$(dirname "$1")" 2>/dev/null; sudo umount "$1" 2>/dev/null; sudo rm -rf "$(dirname "$1")"' _ {} \; 2>/dev/null || true
+    # /tmp cleanup is handled by the trap in cleanup()
 }
 
 copy_to_windows() {
@@ -356,53 +550,85 @@ Usage: $(basename "$0") [OPTIONS]
 Build and install a custom WSL2 kernel from source.
 
 Options:
-  --step <name>   Run a single step instead of the full pipeline.
-                  Valid steps: install-deps, clone, build-kernel,
-                               build-modules, copy, fix-permissions,
-                               configure-wsl, restart-wsl
-  --dry-run       Print what would be done without executing anything.
-                  Can also be set via WSLK_DRY_RUN=true.
-  -h, --help      Show this help message and exit.
+  --step <name>          Run only a single step instead of the full pipeline.
+                         Valid steps: install-deps, clone, build-kernel,
+                                      build-modules, copy, fix-permissions,
+                                      configure-wsl, restart-wsl
+  --repo <url>           Set kernel repo URL         (WSLK_KERNEL_REPO)
+  --version <branch>     Set kernel branch or tag    (WSLK_KERNEL_VERSION)
+  --arch <arch>          Set target architecture     (WSLK_ARCH)
+  --output-dir <path>    Set Windows output dir      (WSLK_OUTPUT_DIR)
+  --src-dir <path>       Set kernel source dir       (KERNEL_SRC_DIR)
+  --config <path>        Set kernel config path      (WSLK_KCONFIG_CONFIG)
+  --full-clone           Full clone instead of --depth 1
+  --skip-deps            Skip package installation
+  --skip-clone           Skip git clone; source dir must already exist
+  --skip-restart         Skip WSL shutdown after install
+  --skip-wsl-check       Skip WSL environment detection
+  --dry-run              Print actions without executing (WSLK_DRY_RUN=true)
+  -y, --yes              Skip all Y/N confirmation prompts
+  --non-interactive      Disable all interactive prompts (implies --yes)
+  -h, --help             Show this help message and exit
 
 Environment variables:
   WSLK_KERNEL_REPO              Git repo URL
-                                      (default: https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling)
+                                  (default: https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling)
   WSLK_KERNEL_VERSION           Branch or tag to build
-                                      (default: wsl-7.0-rolling)
-  WSLK_OUTPUT_DIR               Windows output directory for kernel/modules
-                                      (default: %USERPROFILE%\\.wsl-kernel)
+                                  (default: auto-detected via git ls-remote)
+  WSLK_OUTPUT_DIR               Windows output directory
+                                  (default: %USERPROFILE%\\.wsl-kernel)
   WSLK_ARCH                     Target architecture
-                                      (default: x86)
+                                  (default: x86)
   WSLK_KCONFIG_CONFIG           Kernel config path (relative to source tree)
-                                      (default: arch/<ARCH>/configs/config-wsl-<ARCH>-rt)
-  WSLK_SKIP_WSL_CHECK           Skip WSL environment detection check (default: false)
-  WSLK_SKIP_DEPS                Skip package installation (default: false)
-  WSLK_SKIP_REPO_CLONE          Skip git clone; KERNEL_SRC_DIR must already exist
-                                      (default: false)
-  WSLK_FULL_CLONE               Full clone instead of shallow --depth 1
-                                      (default: false)
-  WSLK_SKIP_MODULES_SCRIPT_CHECK  Skip download of gen_modules_vhdx.sh if absent
-                                      (default: false)
-  WSLK_SKIP_RESTART             Skip WSL shutdown after install (default: false)
-  WSLK_DRY_RUN                  Print actions without executing (default: false)
-  KERNEL_SRC_DIR                    Path to kernel source tree
-                                      (default: wsl-kernel-src, relative to cwd)
+                                  (default: arch/<ARCH>/configs/config-wsl-<ARCH>-rt)
+  WSLK_SKIP_WSL_CHECK           Skip WSL environment check   (default: false)
+  WSLK_SKIP_DEPS                Skip package installation    (default: false)
+  WSLK_SKIP_REPO_CLONE          Skip git clone               (default: false)
+  WSLK_FULL_CLONE               Full clone vs --depth 1      (default: false)
+  WSLK_SKIP_MODULES_SCRIPT_CHECK  Skip gen_modules_vhdx.sh download check
+                                  (default: false)
+  WSLK_SKIP_RESTART             Skip WSL shutdown            (default: false)
+  WSLK_DRY_RUN                  Print without executing      (default: false)
+  KERNEL_SRC_DIR                Path to kernel source tree
+                                  (default: /tmp/wsl-kernel)
 EOF
 }
 
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
-_STEP=""
-
 parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --step)
                 [[ $# -lt 2 ]] && { log_error "--step requires an argument"; exit 1; }
                 _STEP="$2"; shift 2 ;;
-            --dry-run)
-                WSLK_DRY_RUN="true"; shift ;;
+            --repo)
+                [[ $# -lt 2 ]] && { log_error "--repo requires an argument"; exit 1; }
+                WSLK_KERNEL_REPO="$2"; shift 2 ;;
+            --version)
+                [[ $# -lt 2 ]] && { log_error "--version requires an argument"; exit 1; }
+                WSLK_KERNEL_VERSION="$2"; shift 2 ;;
+            --arch)
+                [[ $# -lt 2 ]] && { log_error "--arch requires an argument"; exit 1; }
+                WSLK_ARCH="$2"; shift 2 ;;
+            --output-dir)
+                [[ $# -lt 2 ]] && { log_error "--output-dir requires an argument"; exit 1; }
+                WSLK_OUTPUT_DIR="$2"; shift 2 ;;
+            --src-dir)
+                [[ $# -lt 2 ]] && { log_error "--src-dir requires an argument"; exit 1; }
+                KERNEL_SRC_DIR="$2"; shift 2 ;;
+            --config)
+                [[ $# -lt 2 ]] && { log_error "--config requires an argument"; exit 1; }
+                WSLK_KCONFIG_CONFIG="$2"; shift 2 ;;
+            --full-clone)        WSLK_FULL_CLONE="true"; shift ;;
+            --skip-deps)         WSLK_SKIP_DEPS="true"; shift ;;
+            --skip-clone)        WSLK_SKIP_REPO_CLONE="true"; shift ;;
+            --skip-restart)      WSLK_SKIP_RESTART="true"; shift ;;
+            --skip-wsl-check)    WSLK_SKIP_WSL_CHECK="true"; shift ;;
+            --dry-run)           WSLK_DRY_RUN="true"; shift ;;
+            -y|--yes)            _YES="true"; shift ;;
+            --non-interactive)   _NON_INTERACTIVE="true"; _YES="true"; shift ;;
             -h|--help)
                 show_help; exit 0 ;;
             *)
@@ -440,6 +666,34 @@ main() {
     parse_args "$@"
     check_wsl_environment
 
+    # Resolve kernel version — interactive prompt, auto-detect, or fallback
+    if [[ -z "$_STEP" ]] && is_interactive; then
+        interactive_configure
+    elif [[ -z "$WSLK_KERNEL_VERSION" ]] && [[ "$WSLK_SKIP_REPO_CLONE" != "true" ]]; then
+        log "Auto-detecting latest kernel version from $WSLK_KERNEL_REPO..."
+        WSLK_KERNEL_VERSION=$(detect_latest_version "$WSLK_KERNEL_REPO")
+        log "Using version: $WSLK_KERNEL_VERSION"
+    fi
+    # Ensure version is always set (fallback guards against edge cases)
+    WSLK_KERNEL_VERSION="${WSLK_KERNEL_VERSION:-wsl-7.0-rolling}"
+
+    # Derive config path now that WSLK_ARCH is finalised
+    WSLK_KCONFIG_CONFIG="${WSLK_KCONFIG_CONFIG:-arch/${WSLK_ARCH}/configs/config-wsl-${WSLK_ARCH}-rt}"
+
+    # Show config summary and ask for confirmation (full pipeline only)
+    if [[ -z "$_STEP" ]]; then
+        show_config_summary
+        if [[ "$_YES" != "true" ]] && is_interactive; then
+            prompt_yes_no "Proceed with the build?" "y" || { log "Aborted by user."; exit 0; }
+            echo ""
+        fi
+    fi
+
+    # Acquire sudo once and keep it alive for the duration of the build
+    if [[ "$WSLK_DRY_RUN" != "true" ]]; then
+        start_sudo_keepalive
+    fi
+
     if [[ -n "$_STEP" ]]; then
         log "Running single step: $_STEP"
         run_step "$_STEP" || { log_error "Step '$_STEP' failed"; exit 1; }
@@ -457,7 +711,7 @@ main() {
         run_step "$step" || { log_error "[$current/$total] $step failed"; exit 1; }
     done
 
-    if [[ "$WSLK_DRY_RUN" == "false" ]]; then
+    if [[ "$WSLK_DRY_RUN" != "true" ]]; then
         resolve_build_names
         log "Custom WSL kernel installed: $KERNEL_NAME"
     else
