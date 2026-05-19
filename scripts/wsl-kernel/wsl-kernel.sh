@@ -4,19 +4,19 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Configuration — all settings can be overridden via environment variables
 # ---------------------------------------------------------------------------
-MK_WSL_K_KERNEL_REPO="${MK_WSL_K_KERNEL_REPO:-https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling}"
-MK_WSL_K_KERNEL_VERSION="${MK_WSL_K_KERNEL_VERSION:-wsl-7.0-rolling}"
-MK_WSL_K_OUTPUT_DIR="${MK_WSL_K_OUTPUT_DIR:-%USERPROFILE%\.wsl-kernel}"
-MK_WSL_K_ARCH="${MK_WSL_K_ARCH:-x86}"
-MK_WSL_K_KCONFIG_CONFIG="${MK_WSL_K_KCONFIG_CONFIG:-arch/${MK_WSL_K_ARCH}/configs/config-wsl-${MK_WSL_K_ARCH}-rt}"
+WSLK_KERNEL_REPO="${WSLK_KERNEL_REPO:-https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling}"
+WSLK_KERNEL_VERSION="${WSLK_KERNEL_VERSION:-wsl-7.0-rolling}"
+WSLK_OUTPUT_DIR="${WSLK_OUTPUT_DIR:-%USERPROFILE%\.wsl-kernel}"
+WSLK_ARCH="${WSLK_ARCH:-x86}"
+WSLK_KCONFIG_CONFIG="${WSLK_KCONFIG_CONFIG:-arch/${WSLK_ARCH}/configs/config-wsl-${WSLK_ARCH}-rt}"
 
-MK_WSL_K_SKIP_WSL_CHECK="${MK_WSL_K_SKIP_WSL_CHECK:-false}"
-MK_WSL_K_SKIP_DEPS="${MK_WSL_K_SKIP_DEPS:-false}"
-MK_WSL_K_SKIP_REPO_CLONE="${MK_WSL_K_SKIP_REPO_CLONE:-false}"
-MK_WSL_K_FULL_CLONE="${MK_WSL_K_FULL_CLONE:-false}"
-MK_WSL_K_SKIP_MODULES_SCRIPT_CHECK="${MK_WSL_K_SKIP_MODULES_SCRIPT_CHECK:-false}"
-MK_WSL_K_SKIP_RESTART="${MK_WSL_K_SKIP_RESTART:-false}"
-MK_WSL_K_DRY_RUN="${MK_WSL_K_DRY_RUN:-false}"
+WSLK_SKIP_WSL_CHECK="${WSLK_SKIP_WSL_CHECK:-false}"
+WSLK_SKIP_DEPS="${WSLK_SKIP_DEPS:-false}"
+WSLK_SKIP_REPO_CLONE="${WSLK_SKIP_REPO_CLONE:-false}"
+WSLK_FULL_CLONE="${WSLK_FULL_CLONE:-false}"
+WSLK_SKIP_MODULES_SCRIPT_CHECK="${WSLK_SKIP_MODULES_SCRIPT_CHECK:-false}"
+WSLK_SKIP_RESTART="${WSLK_SKIP_RESTART:-false}"
+WSLK_DRY_RUN="${WSLK_DRY_RUN:-false}"
 
 # Default clone target relative to cwd; set externally to override
 KERNEL_SRC_DIR="${KERNEL_SRC_DIR:-wsl-kernel-src}"
@@ -76,8 +76,8 @@ resolve_build_names() {
         fi
         KERNEL_RELEASE=$(cd "$KERNEL_SRC_DIR" && make -s kernelrelease)
     fi
-    KERNEL_NAME="vmlinux-${KERNEL_RELEASE}-${MK_WSL_K_ARCH}"
-    MODULES_NAME="modules-${KERNEL_RELEASE}-${MK_WSL_K_ARCH}.vhdx"
+    KERNEL_NAME="vmlinux-${KERNEL_RELEASE}-${WSLK_ARCH}"
+    MODULES_NAME="modules-${KERNEL_RELEASE}-${WSLK_ARCH}.vhdx"
     MODULES_VHDX_PATH="$KERNEL_SRC_DIR/modules.vhdx"
 }
 
@@ -86,7 +86,7 @@ resolve_build_names() {
 resolve_win_output_dir() {
     if [[ -z "$WIN_OUTPUT_DIR" ]]; then
         local win_output_dir_expanded
-        win_output_dir_expanded=$(cmd.exe /c "echo ${MK_WSL_K_OUTPUT_DIR}" 2>/dev/null | tr -d '\r\n')
+        win_output_dir_expanded=$(cmd.exe /c "echo ${WSLK_OUTPUT_DIR}" 2>/dev/null | tr -d '\r\n')
         WIN_OUTPUT_DIR=$(wslpath -u "$win_output_dir_expanded")
         mkdir -p "$WIN_OUTPUT_DIR"
     fi
@@ -96,7 +96,7 @@ resolve_win_output_dir() {
 # Pre-flight checks
 # ---------------------------------------------------------------------------
 check_wsl_environment() {
-    if [[ "$MK_WSL_K_SKIP_WSL_CHECK" == "true" ]]; then
+    if [[ "$WSLK_SKIP_WSL_CHECK" == "true" ]]; then
         log "Skipping WSL environment check"
         return 0
     fi
@@ -113,11 +113,11 @@ check_wsl_environment() {
 }
 
 install_deps() {
-    if [[ "$MK_WSL_K_SKIP_DEPS" == "true" ]]; then
+    if [[ "$WSLK_SKIP_DEPS" == "true" ]]; then
         log "Skipping dependency installation"
         return 0
     fi
-    if [[ "$MK_WSL_K_DRY_RUN" == "true" ]]; then
+    if [[ "$WSLK_DRY_RUN" == "true" ]]; then
         log "[DRY-RUN] Would install build dependencies"
         return 0
     fi
@@ -140,7 +140,7 @@ install_deps() {
             sudo pacman -Sy --noconfirm base-devel xmlto kmod inetutils bc libelf bc git cpio perl tar xz
             ;;
         *)
-            log_error "Unsupported distro: ${ID:-unknown}. Install build dependencies manually and set MK_WSL_K_SKIP_DEPS=true"
+            log_error "Unsupported distro: ${ID:-unknown}. Install build dependencies manually and set WSLK_SKIP_DEPS=true"
             return 1
             ;;
     esac
@@ -148,7 +148,7 @@ install_deps() {
 }
 
 clone_kernel_repo() {
-    if [[ "$MK_WSL_K_SKIP_REPO_CLONE" == "true" ]]; then
+    if [[ "$WSLK_SKIP_REPO_CLONE" == "true" ]]; then
         if [[ ! -d "$KERNEL_SRC_DIR" ]]; then
             log_error "KERNEL_SRC_DIR='$KERNEL_SRC_DIR' does not exist. Set it to an existing kernel source tree."
             return 1
@@ -160,22 +160,22 @@ clone_kernel_repo() {
         log_warn "$KERNEL_SRC_DIR already exists; skipping clone. Delete it or set KERNEL_SRC_DIR to a new path to re-clone."
         return 0
     fi
-    if [[ "$MK_WSL_K_DRY_RUN" == "true" ]]; then
-        log "[DRY-RUN] Would clone $MK_WSL_K_KERNEL_REPO (branch: $MK_WSL_K_KERNEL_VERSION) into $KERNEL_SRC_DIR"
+    if [[ "$WSLK_DRY_RUN" == "true" ]]; then
+        log "[DRY-RUN] Would clone $WSLK_KERNEL_REPO (branch: $WSLK_KERNEL_VERSION) into $KERNEL_SRC_DIR"
         return 0
     fi
-    log "Cloning kernel repo: $MK_WSL_K_KERNEL_REPO (branch/tag: $MK_WSL_K_KERNEL_VERSION) into $KERNEL_SRC_DIR..."
-    local clone_args=(--branch "$MK_WSL_K_KERNEL_VERSION")
-    if [[ "$MK_WSL_K_FULL_CLONE" == "false" ]]; then
+    log "Cloning kernel repo: $WSLK_KERNEL_REPO (branch/tag: $WSLK_KERNEL_VERSION) into $KERNEL_SRC_DIR..."
+    local clone_args=(--branch "$WSLK_KERNEL_VERSION")
+    if [[ "$WSLK_FULL_CLONE" == "false" ]]; then
         clone_args+=(--depth 1)
     fi
-    git clone "${clone_args[@]}" "$MK_WSL_K_KERNEL_REPO" "$KERNEL_SRC_DIR"
+    git clone "${clone_args[@]}" "$WSLK_KERNEL_REPO" "$KERNEL_SRC_DIR"
     log "Kernel repo cloned to $KERNEL_SRC_DIR"
 }
 
 build_kernel() {
-    if [[ "$MK_WSL_K_DRY_RUN" == "true" ]]; then
-        log "[DRY-RUN] Would run: make KCONFIG_CONFIG='$MK_WSL_K_KCONFIG_CONFIG' -j$(nproc) in $KERNEL_SRC_DIR"
+    if [[ "$WSLK_DRY_RUN" == "true" ]]; then
+        log "[DRY-RUN] Would run: make KCONFIG_CONFIG='$WSLK_KCONFIG_CONFIG' -j$(nproc) in $KERNEL_SRC_DIR"
         return 0
     fi
     if [[ ! -d "$KERNEL_SRC_DIR" ]]; then
@@ -183,13 +183,13 @@ build_kernel() {
         return 1
     fi
     log "Building kernel in $KERNEL_SRC_DIR (this may take a while)..."
-    ( cd "$KERNEL_SRC_DIR" && make KCONFIG_CONFIG="$MK_WSL_K_KCONFIG_CONFIG" -j"$(nproc)" ) || return 1
+    ( cd "$KERNEL_SRC_DIR" && make KCONFIG_CONFIG="$WSLK_KCONFIG_CONFIG" -j"$(nproc)" ) || return 1
     resolve_build_names
     log "Kernel built: $KERNEL_RELEASE"
 }
 
 build_modules_vhdx() {
-    if [[ "$MK_WSL_K_DRY_RUN" == "true" ]]; then
+    if [[ "$WSLK_DRY_RUN" == "true" ]]; then
         log "[DRY-RUN] Would install modules and build modules.vhdx in $KERNEL_SRC_DIR"
         return 0
     fi
@@ -205,7 +205,7 @@ build_modules_vhdx() {
 
     log "Building modules vhdx..."
     local script="$KERNEL_SRC_DIR/Microsoft/scripts/gen_modules_vhdx.sh"
-    if [[ "$MK_WSL_K_SKIP_MODULES_SCRIPT_CHECK" == "false" ]] && [[ ! -f "$script" ]]; then
+    if [[ "$WSLK_SKIP_MODULES_SCRIPT_CHECK" == "false" ]] && [[ ! -f "$script" ]]; then
         log "gen_modules_vhdx.sh not found in repo; downloading from upstream..."
         _DOWNLOADED_SCRIPT=$(mktemp)
         curl -fsSL \
@@ -229,14 +229,14 @@ build_modules_vhdx() {
 }
 
 copy_to_windows() {
-    if [[ "$MK_WSL_K_DRY_RUN" == "true" ]]; then
+    if [[ "$WSLK_DRY_RUN" == "true" ]]; then
         log "[DRY-RUN] Would copy kernel and modules vhdx to Windows output directory"
         return 0
     fi
     resolve_build_names    || return 1
     resolve_win_output_dir || return 1
 
-    local kernel_src="$KERNEL_SRC_DIR/arch/${MK_WSL_K_ARCH}/boot/bzImage"
+    local kernel_src="$KERNEL_SRC_DIR/arch/${WSLK_ARCH}/boot/bzImage"
     log "Copying kernel to $WIN_OUTPUT_DIR..."
     cp "$kernel_src" "$WIN_OUTPUT_DIR/$KERNEL_NAME"
 
@@ -246,7 +246,7 @@ copy_to_windows() {
 }
 
 configure_wsl() {
-    if [[ "$MK_WSL_K_DRY_RUN" == "true" ]]; then
+    if [[ "$WSLK_DRY_RUN" == "true" ]]; then
         log "[DRY-RUN] Would update .wslconfig with custom kernel and modules paths"
         return 0
     fi
@@ -319,7 +319,7 @@ configure_wsl() {
 #   https://github.com/microsoft/WSL/issues/40482#issuecomment-4416647787
 #   https://github.com/Locietta/xanmod-kernel-WSL2/issues/153
 fix_vhdx_permissions() {
-    if [[ "$MK_WSL_K_DRY_RUN" == "true" ]]; then
+    if [[ "$WSLK_DRY_RUN" == "true" ]]; then
         log "[DRY-RUN] Would grant RX on modules VHDX to BUILTIN\\Users, ALL APPLICATION PACKAGES, ALL RESTRICTED APPLICATION PACKAGES"
         return 0
     fi
@@ -336,11 +336,11 @@ fix_vhdx_permissions() {
 }
 
 restart_wsl() {
-    if [[ "$MK_WSL_K_SKIP_RESTART" == "true" ]]; then
+    if [[ "$WSLK_SKIP_RESTART" == "true" ]]; then
         log "Skipping WSL restart"
         return 0
     fi
-    if [[ "$MK_WSL_K_DRY_RUN" == "true" ]]; then
+    if [[ "$WSLK_DRY_RUN" == "true" ]]; then
         log "[DRY-RUN] Would run: wsl.exe --shutdown"
         return 0
     fi
@@ -364,30 +364,30 @@ Options:
                                build-modules, copy, fix-permissions,
                                configure-wsl, restart-wsl
   --dry-run       Print what would be done without executing anything.
-                  Can also be set via MK_WSL_K_DRY_RUN=true.
+                  Can also be set via WSLK_DRY_RUN=true.
   -h, --help      Show this help message and exit.
 
 Environment variables:
-  MK_WSL_K_KERNEL_REPO              Git repo URL
+  WSLK_KERNEL_REPO              Git repo URL
                                       (default: https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling)
-  MK_WSL_K_KERNEL_VERSION           Branch or tag to build
+  WSLK_KERNEL_VERSION           Branch or tag to build
                                       (default: wsl-7.0-rolling)
-  MK_WSL_K_OUTPUT_DIR               Windows output directory for kernel/modules
+  WSLK_OUTPUT_DIR               Windows output directory for kernel/modules
                                       (default: %USERPROFILE%\\.wsl-kernel)
-  MK_WSL_K_ARCH                     Target architecture
+  WSLK_ARCH                     Target architecture
                                       (default: x86)
-  MK_WSL_K_KCONFIG_CONFIG           Kernel config path (relative to source tree)
+  WSLK_KCONFIG_CONFIG           Kernel config path (relative to source tree)
                                       (default: arch/<ARCH>/configs/config-wsl-<ARCH>-rt)
-  MK_WSL_K_SKIP_WSL_CHECK           Skip WSL environment detection check (default: false)
-  MK_WSL_K_SKIP_DEPS                Skip package installation (default: false)
-  MK_WSL_K_SKIP_REPO_CLONE          Skip git clone; KERNEL_SRC_DIR must already exist
+  WSLK_SKIP_WSL_CHECK           Skip WSL environment detection check (default: false)
+  WSLK_SKIP_DEPS                Skip package installation (default: false)
+  WSLK_SKIP_REPO_CLONE          Skip git clone; KERNEL_SRC_DIR must already exist
                                       (default: false)
-  MK_WSL_K_FULL_CLONE               Full clone instead of shallow --depth 1
+  WSLK_FULL_CLONE               Full clone instead of shallow --depth 1
                                       (default: false)
-  MK_WSL_K_SKIP_MODULES_SCRIPT_CHECK  Skip download of gen_modules_vhdx.sh if absent
+  WSLK_SKIP_MODULES_SCRIPT_CHECK  Skip download of gen_modules_vhdx.sh if absent
                                       (default: false)
-  MK_WSL_K_SKIP_RESTART             Skip WSL shutdown after install (default: false)
-  MK_WSL_K_DRY_RUN                  Print actions without executing (default: false)
+  WSLK_SKIP_RESTART             Skip WSL shutdown after install (default: false)
+  WSLK_DRY_RUN                  Print actions without executing (default: false)
   KERNEL_SRC_DIR                    Path to kernel source tree
                                       (default: wsl-kernel-src, relative to cwd)
 EOF
@@ -405,7 +405,7 @@ parse_args() {
                 [[ $# -lt 2 ]] && { log_error "--step requires an argument"; exit 1; }
                 _STEP="$2"; shift 2 ;;
             --dry-run)
-                MK_WSL_K_DRY_RUN="true"; shift ;;
+                WSLK_DRY_RUN="true"; shift ;;
             -h|--help)
                 show_help; exit 0 ;;
             *)
@@ -460,7 +460,7 @@ main() {
         run_step "$step" || { log_error "[$current/$total] $step failed"; exit 1; }
     done
 
-    if [[ "$MK_WSL_K_DRY_RUN" == "false" ]]; then
+    if [[ "$WSLK_DRY_RUN" == "false" ]]; then
         resolve_build_names
         log "Custom WSL kernel installed: $KERNEL_NAME"
     else
