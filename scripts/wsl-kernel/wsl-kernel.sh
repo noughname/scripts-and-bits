@@ -544,53 +544,59 @@ restart_wsl() {
 # Help
 # ---------------------------------------------------------------------------
 show_help() {
+    local B=$'\033[1m'      # bold
+    local C=$'\033[0;36m'   # cyan   — flag names
+    local G=$'\033[0;32m'   # green  — metavar placeholders
+    local D=$'\033[2m'      # dim    — defaults / secondary info
+    local R=$'\033[0m'      # reset
+
     cat <<EOF
-Usage: $(basename "$0") [OPTIONS]
+${B}Usage:${R} $(basename "$0") [OPTIONS]
 
 Build and install a custom WSL2 kernel from source.
 
-Options:
-  --step <name>          Run only a single step instead of the full pipeline.
+${B}Options:${R}
+  ${C}--step${R} ${G}<name>${R}          Run only a single step instead of the full pipeline.
                          Valid steps: install-deps, clone, build-kernel,
                                       build-modules, copy, fix-permissions,
                                       configure-wsl, restart-wsl
-  --repo <url>           Set kernel repo URL         (WSLK_KERNEL_REPO)
-  --version <branch>     Set kernel branch or tag    (WSLK_KERNEL_VERSION)
-  --arch <arch>          Set target architecture     (WSLK_ARCH)
-  --output-dir <path>    Set Windows output dir      (WSLK_OUTPUT_DIR)
-  --src-dir <path>       Set kernel source dir       (KERNEL_SRC_DIR)
-  --config <path>        Set kernel config path      (WSLK_KCONFIG_CONFIG)
-  --full-clone           Full clone instead of --depth 1
-  --skip-deps            Skip package installation
-  --skip-clone           Skip git clone; source dir must already exist
-  --skip-restart         Skip WSL shutdown after install
-  --skip-wsl-check       Skip WSL environment detection
-  --dry-run              Print actions without executing (WSLK_DRY_RUN=true)
-  -y, --yes              Skip all Y/N confirmation prompts
-  --non-interactive      Disable all interactive prompts (implies --yes)
-  -h, --help             Show this help message and exit
+  ${C}--repo${R} ${G}<url>${R}           Set kernel repo URL         ${D}(WSLK_KERNEL_REPO)${R}
+  ${C}--version${R} ${G}<branch>${R}     Set kernel branch or tag    ${D}(WSLK_KERNEL_VERSION)${R}
+  ${C}--arch${R} ${G}<arch>${R}          Set target architecture     ${D}(WSLK_ARCH)${R}
+  ${C}--output-dir${R} ${G}<path>${R}    Set Windows output dir      ${D}(WSLK_OUTPUT_DIR)${R}
+  ${C}--src-dir${R} ${G}<path>${R}       Set kernel source dir       ${D}(KERNEL_SRC_DIR)${R}
+  ${C}--config${R} ${G}<path>${R}        Set kernel config path      ${D}(WSLK_KCONFIG_CONFIG)${R}
+  ${C}--full-clone${R}           Full clone instead of --depth 1
+  ${C}--skip-deps${R}            Skip package installation
+  ${C}--skip-clone${R}           Skip git clone; source dir must already exist
+  ${C}--skip-restart${R}         Skip WSL shutdown after install
+  ${C}--skip-wsl-check${R}       Skip WSL environment detection
+  ${C}--dry-run${R}              Print actions without executing ${D}(WSLK_DRY_RUN=true)${R}
+  ${C}-y${R}, ${C}--yes${R}              Skip all Y/N confirmation prompts
+  ${C}--non-interactive${R}      Disable all interactive prompts ${D}(implies --yes)${R}
+  ${C}-h${R}, ${C}--help${R}             Show this help message and exit
 
-Environment variables:
-  WSLK_KERNEL_REPO              Git repo URL
-                                  (default: https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling)
-  WSLK_KERNEL_VERSION           Branch or tag to build
-                                  (default: auto-detected via git ls-remote)
-  WSLK_OUTPUT_DIR               Windows output directory
-                                  (default: %USERPROFILE%\\.wsl-kernel)
-  WSLK_ARCH                     Target architecture
-                                  (default: x86)
-  WSLK_KCONFIG_CONFIG           Kernel config path (relative to source tree)
-                                  (default: arch/<ARCH>/configs/config-wsl-<ARCH>-rt)
-  WSLK_SKIP_WSL_CHECK           Skip WSL environment check   (default: false)
-  WSLK_SKIP_DEPS                Skip package installation    (default: false)
-  WSLK_SKIP_REPO_CLONE          Skip git clone               (default: false)
-  WSLK_FULL_CLONE               Full clone vs --depth 1      (default: false)
-  WSLK_SKIP_MODULES_SCRIPT_CHECK  Skip gen_modules_vhdx.sh download check
-                                  (default: false)
-  WSLK_SKIP_RESTART             Skip WSL shutdown            (default: false)
-  WSLK_DRY_RUN                  Print without executing      (default: false)
-  KERNEL_SRC_DIR                Path to kernel source tree
-                                  (default: /tmp/wsl-kernel)
+${B}Environment variables:${R}
+  ${C}WSLK_KERNEL_REPO${R}              Git repo URL
+                                  ${D}(default: https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling)${R}
+  ${C}WSLK_KERNEL_VERSION${R}           Branch or tag to build
+                                  ${D}(default: auto-detected via git ls-remote)${R}
+  ${C}WSLK_OUTPUT_DIR${R}               Windows output directory
+                                  ${D}(default: %USERPROFILE%\\.wsl-kernel)${R}
+  ${C}WSLK_ARCH${R}                     Target architecture
+                                  ${D}(default: x86)${R}
+  ${C}WSLK_KCONFIG_CONFIG${R}           Kernel config path (relative to source tree)
+                                  ${D}(default: arch/<ARCH>/configs/config-wsl-<ARCH>-rt)${R}
+  ${C}WSLK_SKIP_WSL_CHECK${R}           Skip WSL environment check   ${D}(default: false)${R}
+  ${C}WSLK_SKIP_DEPS${R}                Skip package installation    ${D}(default: false)${R}
+  ${C}WSLK_SKIP_REPO_CLONE${R}          Skip git clone               ${D}(default: false)${R}
+  ${C}WSLK_FULL_CLONE${R}               Full clone vs --depth 1      ${D}(default: false)${R}
+  ${C}WSLK_SKIP_MODULES_SCRIPT_CHECK${R}  Skip gen_modules_vhdx.sh download check
+                                  ${D}(default: false)${R}
+  ${C}WSLK_SKIP_RESTART${R}             Skip WSL shutdown            ${D}(default: false)${R}
+  ${C}WSLK_DRY_RUN${R}                  Print without executing      ${D}(default: false)${R}
+  ${C}KERNEL_SRC_DIR${R}                Path to kernel source tree
+                                  ${D}(default: /tmp/wsl-kernel)${R}
 EOF
 }
 
