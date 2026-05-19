@@ -10,6 +10,7 @@ MK_WSL_K_OUTPUT_DIR="${MK_WSL_K_OUTPUT_DIR:-%USERPROFILE%\.wsl-kernel}"
 MK_WSL_K_ARCH="${MK_WSL_K_ARCH:-x86}"
 MK_WSL_K_KCONFIG_CONFIG="${MK_WSL_K_KCONFIG_CONFIG:-arch/${MK_WSL_K_ARCH}/configs/config-wsl-${MK_WSL_K_ARCH}-rt}"
 
+MK_WSL_K_SKIP_WSL_CHECK="${MK_WSL_K_SKIP_WSL_CHECK:-false}"
 MK_WSL_K_SKIP_DEPS="${MK_WSL_K_SKIP_DEPS:-false}"
 MK_WSL_K_SKIP_REPO_CLONE="${MK_WSL_K_SKIP_REPO_CLONE:-false}"
 MK_WSL_K_FULL_CLONE="${MK_WSL_K_FULL_CLONE:-false}"
@@ -95,8 +96,18 @@ resolve_win_output_dir() {
 # Pre-flight checks
 # ---------------------------------------------------------------------------
 check_wsl_environment() {
-    if [[ ! -f /proc/sys/fs/binfmt_misc/WSLInterop ]]; then
-        log_error "This script must be run inside a WSL environment."
+    if [[ "$MK_WSL_K_SKIP_WSL_CHECK" == "true" ]]; then
+        log "Skipping WSL environment check"
+        return 0
+    fi
+    # Prefer WSL's injected wslinfo command when available.
+    if [[ -x /usr/bin/wslinfo && -L /usr/bin/wslinfo ]]; then
+        if /usr/bin/wslinfo --version >/dev/null 2>&1 \
+            || /usr/bin/wslinfo --wsl-version >/dev/null 2>&1 \
+            || /usr/bin/wslinfo --networking-mode >/dev/null 2>&1; then
+            return 0
+        fi
+        log_error "Detected /usr/bin/wslinfo, but WSL checks failed."
         exit 1
     fi
 }
@@ -367,6 +378,7 @@ Environment variables:
                                       (default: x86)
   MK_WSL_K_KCONFIG_CONFIG           Kernel config path (relative to source tree)
                                       (default: arch/<ARCH>/configs/config-wsl-<ARCH>-rt)
+  MK_WSL_K_SKIP_WSL_CHECK           Skip WSL environment detection check (default: false)
   MK_WSL_K_SKIP_DEPS                Skip package installation (default: false)
   MK_WSL_K_SKIP_REPO_CLONE          Skip git clone; KERNEL_SRC_DIR must already exist
                                       (default: false)
