@@ -131,13 +131,10 @@ install_deps() {
     case "${ID:-}" in
         debian|ubuntu|linuxmint)
             sudo apt-get update -y
-            sudo apt-get install -y build-essential flex bison bc dwarves libssl-dev libelf-dev cpio qemu-utils git
+            sudo apt-get install -y build-essential flex bison bc dwarves libssl-dev libelf-dev cpio qemu-utils git zstd make
             ;;
         fedora|rhel|centos|rocky|almalinux)
-            sudo dnf install -y gcc make flex bison openssl-devel elfutils-libelf-devel bc dwarves python3 git
-            ;;
-        arch|manjaro|endeavouros)
-            sudo pacman -Sy --noconfirm base-devel xmlto kmod inetutils bc libelf bc git cpio perl tar xz
+            sudo dnf install -y gcc make flex bison openssl-devel elfutils-libelf-devel bc dwarves python3 git zstd qemu-img e2fsprogs diffutils depmod
             ;;
         *)
             log_error "Unsupported distro: ${ID:-unknown}. Install build dependencies manually and set WSLK_SKIP_DEPS=true"
