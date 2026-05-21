@@ -18,6 +18,10 @@ curl -O https://raw.githubusercontent.com/q415540/scripts-and-bits/refs/heads/ma
 Running without arguments launches **interactive configuration** — you will be
 prompted for the repo, branch/tag, and architecture before the build starts.
 
+> **Note:** The newest available branch is not necessarily the stable release.
+> For example, `wsl-7.1-rolling` may be listed while `wsl-7.0-rolling` is still the
+> recommended stable version. Check the upstream repo before selecting.
+
 To skip all prompts and accept defaults (useful in CI):
 
 ```sh

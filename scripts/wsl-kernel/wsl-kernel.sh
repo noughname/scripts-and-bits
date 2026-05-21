@@ -140,6 +140,7 @@ detect_latest_version() {
         log_warn "Could not detect latest version from $repo; using fallback"
         echo "wsl-7.0-rolling"
     else
+        log_warn "NOTE: Auto-selected '$latest' as the newest branch, but it may not be the stable release. Use --version or set WSLK_KERNEL_VERSION to override."
         echo "$latest"
     fi
 }
@@ -228,6 +229,7 @@ interactive_configure() {
             && [[ ${#versions[@]} -gt 0 ]]; then
         echo ""
         log "Available branches:"
+        log_warn "NOTE: The newest branch is not necessarily the stable one (e.g. 7.1 may be available while 7.0 is the stable release)."
         local default_idx=1
         local i
         for (( i=0; i<${#versions[@]}; i++ )); do
