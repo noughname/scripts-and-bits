@@ -128,11 +128,7 @@ fetch_available_versions() {
         | awk '{print $2}' \
         | sed 's|refs/heads/||' \
         | grep "$pattern") || return 1
-    if echo "$branches" | sort -rV >/dev/null 2>&1; then
-        echo "$branches" | sort -rV
-    else
-        echo "$branches" | sort -r
-    fi
+    echo "$branches" | sort -rV 2>/dev/null || echo "$branches" | sort -r
 }
 
 # Return the latest matching branch, or a hardcoded fallback on failure.
