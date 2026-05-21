@@ -51,49 +51,48 @@ The script runs these steps in order. Each can be run individually with
 ## CLI flags
 
 ```
-./wsl-kernel.sh [OPTIONS]
+Usage: wsl-kernel.sh [OPTIONS]
 
-  --step <name>          Run a single step (see table above)
-  --repo <url>           Kernel git repo URL
+Build and install a custom WSL2 kernel from source.
+CLI flags take precedence over environment variables.
+
+Options:
+  --step <name>          Run a single step instead of the full pipeline.
+                         Valid steps: install-deps, clone, build-kernel,
+                                      build-modules, copy, fix-permissions,
+                                      configure-wsl, restart-wsl
+  --repo <url>           Kernel repo URL
+                         [env: WSLK_KERNEL_REPO, default: https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling]
   --version <branch>     Branch or tag to build
-  --arch <arch>          Target architecture (x86, arm64, …)
-  --output-dir <path>    Windows directory to copy kernel/modules into
-  --src-dir <path>       Local kernel source directory
+                         [env: WSLK_KERNEL_VERSION, default: auto-detected via git ls-remote]
+  --arch <arch>          Target architecture
+                         [env: WSLK_ARCH, default: x86]
+  --output-dir <path>    Windows output directory
+                         [env: WSLK_OUTPUT_DIR, default: %USERPROFILE%\.wsl-kernel]
+  --src-dir <path>       Kernel source directory
+                         [env: KERNEL_SRC_DIR, default: wsl-kernel-src]
   --config <path>        Kernel config path (relative to source tree)
+                         [env: WSLK_KCONFIG_CONFIG, default: arch/<ARCH>/configs/config-wsl-<ARCH>-rt]
   --full-clone           Full clone instead of --depth 1
+                         [env: WSLK_FULL_CLONE, default: false]
   --skip-deps            Skip package installation
-  --skip-clone           Skip clone; --src-dir must already exist
-  --skip-restart         Skip wsl.exe --shutdown after install
+                         [env: WSLK_SKIP_DEPS, default: false]
+  --skip-clone           Skip git clone; source dir must already exist
+                         [env: WSLK_SKIP_REPO_CLONE, default: false]
+  --skip-restart         Skip WSL shutdown after install
+                         [env: WSLK_SKIP_RESTART, default: false]
   --skip-wsl-check       Skip WSL environment detection
-  --dry-run              Print actions without executing anything
-  -y, --yes              Skip Y/N confirmation prompts
+                         [env: WSLK_SKIP_WSL_CHECK, default: false]
+  --skip-modules-check   Skip gen_modules_vhdx.sh download check
+                         [env: WSLK_SKIP_MODULES_SCRIPT_CHECK, default: false]
+  --dry-run              Print actions without executing
+                         [env: WSLK_DRY_RUN, default: false]
+  -y, --yes              Skip all Y/N confirmation prompts
   --non-interactive      Disable all interactive prompts (implies --yes)
-  -h, --help             Show help
+  -h, --help             Show this help message and exit
 ```
 
 All flags have an equivalent environment variable (shown in `--help` output).
-
----
-
-## Environment variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WSLK_KERNEL_REPO` | `https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling` | Kernel git repo URL |
-| `WSLK_KERNEL_VERSION` | *(auto-detected)* | Branch or tag; detected via `git ls-remote` when not set |
-| `WSLK_OUTPUT_DIR` | `%USERPROFILE%\.wsl-kernel` | Windows output directory |
-| `WSLK_ARCH` | `x86` | Target architecture |
-| `WSLK_KCONFIG_CONFIG` | `arch/<ARCH>/configs/config-wsl-<ARCH>-rt` | Kernel config path relative to source tree |
-| `WSLK_SKIP_WSL_CHECK` | `false` | Skip WSL environment check |
-| `WSLK_SKIP_DEPS` | `false` | Skip package installation |
-| `WSLK_SKIP_REPO_CLONE` | `false` | Skip `git clone`; `KERNEL_SRC_DIR` must exist |
-| `WSLK_FULL_CLONE` | `false` | Full clone instead of `--depth 1` |
-| `WSLK_SKIP_MODULES_SCRIPT_CHECK` | `false` | Skip download of `gen_modules_vhdx.sh` if absent |
-| `WSLK_SKIP_RESTART` | `false` | Skip `wsl.exe --shutdown` after install |
-| `WSLK_DRY_RUN` | `false` | Print actions without executing |
-| `KERNEL_SRC_DIR` | `wsl-kernel-src` | Local path for the kernel source tree |
-
-CLI flags take precedence over environment variables.
 
 ---
 
