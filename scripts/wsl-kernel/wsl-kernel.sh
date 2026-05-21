@@ -432,6 +432,9 @@ copy_to_windows() {
     resolve_win_output_dir || return 1
 
     local kernel_src="$KERNEL_SRC_DIR/arch/${WSLK_ARCH}/boot/bzImage"
+    [[ -f "$kernel_src" ]]       || { log_error "Kernel image not found: $kernel_src"; return 1; }
+    [[ -f "$MODULES_VHDX_PATH" ]] || { log_error "Modules VHDX not found: $MODULES_VHDX_PATH"; return 1; }
+
     log "Copying kernel to $WIN_OUTPUT_DIR..."
     cp "$kernel_src" "$WIN_OUTPUT_DIR/$KERNEL_NAME"
 
