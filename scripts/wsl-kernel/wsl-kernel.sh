@@ -184,27 +184,6 @@ prompt_yes_no() {
     [[ "${answer,,}" == "y" || "${answer,,}" == "yes" ]]
 }
 
-# Display a numbered list and let the user pick one item.
-# Sets varname to the selected value; accepts a manual string if not a valid number.
-# Usage: prompt_select <label> <varname> <item1> <item2> ...
-prompt_select() {
-    local label="$1" varname="$2"
-    shift 2
-    local -a items=("$@")
-    local i
-    for (( i=0; i<${#items[@]}; i++ )); do
-        printf "    %2d) %s\n" $(( i+1 )) "${items[$i]}"
-    done
-    local choice=""
-    read -r -p "  $label [1]: " choice
-    choice="${choice:-1}"
-    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#items[@]} )); then
-        printf -v "$varname" '%s' "${items[$(( choice-1 ))]}"
-    else
-        printf -v "$varname" '%s' "$choice"
-    fi
-}
-
 # ---------------------------------------------------------------------------
 # Pre-flight checks
 # ---------------------------------------------------------------------------
