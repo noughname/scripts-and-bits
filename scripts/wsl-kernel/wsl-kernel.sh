@@ -231,12 +231,12 @@ interactive_configure() {
         local default_idx=1
         local i
         for (( i=0; i<${#versions[@]}; i++ )); do
+            local marker=""
             if [[ "${versions[$i]}" == "$WSLK_KERNEL_VERSION" ]]; then
                 default_idx=$(( i+1 ))
+                marker=" *"
             fi
-        done
-        for (( i=0; i<${#versions[@]}; i++ )); do
-            printf "    %2d) %s\n" $(( i+1 )) "${versions[$i]}"
+            printf "    %2d) %s%s\n" $(( i+1 )) "${versions[$i]}" "$marker"
         done
         local choice=""
         read -r -p "  Select branch [$default_idx]: " choice
