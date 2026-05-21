@@ -342,6 +342,10 @@ clone_kernel_repo() {
         if is_interactive && [[ "$_YES" != "true" ]]; then
             log_warn "$KERNEL_SRC_DIR already exists."
             if prompt_yes_no "Delete and re-clone?" "n"; then
+                if [[ "$WSLK_DRY_RUN" == "true" ]]; then
+                    log "[DRY-RUN] Would remove $KERNEL_SRC_DIR and re-clone"
+                    return 0
+                fi
                 log "Removing $KERNEL_SRC_DIR..."
                 rm -rf "$KERNEL_SRC_DIR"
             else
