@@ -11,8 +11,7 @@ WSL picks up the new kernel on next launch.
 ## Quick start
 
 ```sh
-curl -O https://raw.githubusercontent.com/q415540/scripts-and-bits/refs/heads/main/scripts/wsl-kernel/wsl-kernel.sh
-chmod +x wsl-kernel.sh
+curl -O https://raw.githubusercontent.com/q415540/scripts-and-bits/refs/heads/main/scripts/wsl-kernel/wsl-kernel.sh && chmod +x wsl-kernel.sh
 ./wsl-kernel.sh
 ```
 
@@ -88,7 +87,7 @@ All flags have an equivalent environment variable (shown in `--help` output).
 | `WSLK_SKIP_MODULES_SCRIPT_CHECK` | `false` | Skip download of `gen_modules_vhdx.sh` if absent |
 | `WSLK_SKIP_RESTART` | `false` | Skip `wsl.exe --shutdown` after install |
 | `WSLK_DRY_RUN` | `false` | Print actions without executing |
-| `KERNEL_SRC_DIR` | `/tmp/wsl-kernel` | Local path for the kernel source tree |
+| `KERNEL_SRC_DIR` | `wsl-kernel-src` | Local path for the kernel source tree |
 
 CLI flags take precedence over environment variables.
 
@@ -96,12 +95,11 @@ CLI flags take precedence over environment variables.
 
 ## Implementation notes
 
-### Source directory defaults to `/tmp`
+### Source directory defaults to `wsl-kernel-src`
 
-`KERNEL_SRC_DIR` defaults to `/tmp/wsl-kernel` instead of a path in the user's
-home directory. Files under a Windows-accessible location (e.g. the WSL home
-that maps to `\\wsl$\…`) can cause permission issues with Windows tools. `/tmp`
-is a local Linux tmpfs mount and avoids those problems.
+`KERNEL_SRC_DIR` defaults to `wsl-kernel-src` in the current directory,
+as the `/tmp` folder may run out of space during the build and cause a failure.
+This also avoids potential permission issues when cloning into a user home directory.
 
 ### Kernel version auto-detection
 
@@ -161,4 +159,3 @@ The `configure-wsl` step edits `~/.wslconfig` (on the Windows side) using an
 The existing file is backed up to `~/.wslconfig.bak` before any modification.
 A `.tmp` file is used for the atomic write and is registered with the cleanup
 trap so it is removed even on failure.
-

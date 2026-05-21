@@ -19,7 +19,7 @@ WSLK_SKIP_RESTART="${WSLK_SKIP_RESTART:-false}"
 WSLK_DRY_RUN="${WSLK_DRY_RUN:-false}"
 
 # Clone target; defaults to /tmp to avoid home-directory permission issues
-KERNEL_SRC_DIR="${KERNEL_SRC_DIR:-/tmp/wsl-kernel}"
+KERNEL_SRC_DIR="${KERNEL_SRC_DIR:-wsl-kernel-src}"
 
 # ---------------------------------------------------------------------------
 # Runtime flags — set by CLI args only
@@ -557,7 +557,7 @@ ${B}Options:${R}
   ${C}--output-dir${R} ${G}<path>${R}    Windows output directory
                          ${D}[env: WSLK_OUTPUT_DIR, default: %USERPROFILE%\\.wsl-kernel]${R}
   ${C}--src-dir${R} ${G}<path>${R}       Kernel source directory
-                         ${D}[env: KERNEL_SRC_DIR, default: /tmp/wsl-kernel]${R}
+                         ${D}[env: KERNEL_SRC_DIR, default: wsl-kernel-src]${R}
   ${C}--config${R} ${G}<path>${R}        Kernel config path (relative to source tree)
                          ${D}[env: WSLK_KCONFIG_CONFIG, default: arch/<ARCH>/configs/config-wsl-<ARCH>-rt]${R}
   ${C}--full-clone${R}           Full clone instead of --depth 1
