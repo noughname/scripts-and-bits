@@ -190,6 +190,11 @@ check_wsl_environment() {
     fi
     # Primary: WSL-injected wslinfo binary (WSL2 with kernel ≥ 5.15.90)
     if [[ -x /usr/bin/wslinfo && -L /usr/bin/wslinfo ]]; then
+        # Different WSL builds expose different wslinfo flags; try each in turn:
+        #   --version          available since wslinfo was first introduced
+        #   --wsl-version      added in a later WSL update
+        #   --networking-mode  available in more recent builds
+        # A success on any one flag confirms a functional wslinfo binary.
         if /usr/bin/wslinfo --version >/dev/null 2>&1 \
             || /usr/bin/wslinfo --wsl-version >/dev/null 2>&1 \
             || /usr/bin/wslinfo --networking-mode >/dev/null 2>&1; then
