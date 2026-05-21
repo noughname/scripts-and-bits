@@ -5,10 +5,10 @@ set -euo pipefail
 # Configuration — all settings can be overridden via env vars or CLI flags
 # ---------------------------------------------------------------------------
 WSLK_KERNEL_REPO="${WSLK_KERNEL_REPO:-https://github.com/Nevuly/WSL2-Linux-Kernel-Rolling}"
-WSLK_KERNEL_VERSION="${WSLK_KERNEL_VERSION:-}"          # empty → auto-detected or prompted
+WSLK_KERNEL_VERSION="${WSLK_KERNEL_VERSION:-}" # empty - auto-detected or prompted
 WSLK_OUTPUT_DIR="${WSLK_OUTPUT_DIR:-%USERPROFILE%\.wsl-kernel}"
 WSLK_ARCH="${WSLK_ARCH:-x86}"
-WSLK_KCONFIG_CONFIG="${WSLK_KCONFIG_CONFIG:-}"          # empty → derived from WSLK_ARCH in main()
+WSLK_KCONFIG_CONFIG="${WSLK_KCONFIG_CONFIG:-}" # empty - derived from WSLK_ARCH in main()
 
 WSLK_SKIP_WSL_CHECK="${WSLK_SKIP_WSL_CHECK:-false}"
 WSLK_SKIP_DEPS="${WSLK_SKIP_DEPS:-false}"
