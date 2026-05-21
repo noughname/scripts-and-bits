@@ -583,15 +583,13 @@ ${B}Options:${R}
                          ${D}[env: WSLK_SKIP_RESTART, default: false]${R}
   ${C}--skip-wsl-check${R}       Skip WSL environment detection
                          ${D}[env: WSLK_SKIP_WSL_CHECK, default: false]${R}
+  ${C}--skip-modules-check${R}   Skip gen_modules_vhdx.sh download check
+                         ${D}[env: WSLK_SKIP_MODULES_SCRIPT_CHECK, default: false]${R}
   ${C}--dry-run${R}              Print actions without executing
                          ${D}[env: WSLK_DRY_RUN, default: false]${R}
   ${C}-y${R}, ${C}--yes${R}              Skip all Y/N confirmation prompts
   ${C}--non-interactive${R}      Disable all interactive prompts ${D}(implies --yes)${R}
   ${C}-h${R}, ${C}--help${R}             Show this help message and exit
-
-${B}Environment-only:${R}
-  ${C}WSLK_SKIP_MODULES_SCRIPT_CHECK${R}   Skip gen_modules_vhdx.sh download check
-                                   ${D}[default: false]${R}
 EOF
 }
 
@@ -622,14 +620,15 @@ parse_args() {
             --config)
                 [[ $# -lt 2 ]] && { log_error "--config requires an argument"; exit 1; }
                 WSLK_KCONFIG_CONFIG="$2"; shift 2 ;;
-            --full-clone)        WSLK_FULL_CLONE="true"; shift ;;
-            --skip-deps)         WSLK_SKIP_DEPS="true"; shift ;;
-            --skip-clone)        WSLK_SKIP_REPO_CLONE="true"; shift ;;
-            --skip-restart)      WSLK_SKIP_RESTART="true"; shift ;;
-            --skip-wsl-check)    WSLK_SKIP_WSL_CHECK="true"; shift ;;
-            --dry-run)           WSLK_DRY_RUN="true"; shift ;;
-            -y|--yes)            _YES="true"; shift ;;
-            --non-interactive)   _NON_INTERACTIVE="true"; _YES="true"; shift ;;
+            --full-clone)         WSLK_FULL_CLONE="true"; shift ;;
+            --skip-deps)          WSLK_SKIP_DEPS="true"; shift ;;
+            --skip-clone)         WSLK_SKIP_REPO_CLONE="true"; shift ;;
+            --skip-restart)       WSLK_SKIP_RESTART="true"; shift ;;
+            --skip-wsl-check)     WSLK_SKIP_WSL_CHECK="true"; shift ;;
+            --skip-modules-check) WSLK_SKIP_MODULES_SCRIPT_CHECK="true"; shift ;;
+            --dry-run)            WSLK_DRY_RUN="true"; shift ;;
+            -y|--yes)             _YES="true"; shift ;;
+            --non-interactive)    _NON_INTERACTIVE="true"; _YES="true"; shift ;;
             -h|--help)
                 show_help; exit 0 ;;
             *)
