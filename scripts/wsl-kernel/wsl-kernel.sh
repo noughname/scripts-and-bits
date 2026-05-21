@@ -98,13 +98,13 @@ resolve_win_userprofile() {
 # Compute KERNEL_RELEASE (cached) and derive artifact names.
 # Safe to call multiple times — reuses the cached value after the first call.
 resolve_build_names() {
-    if [[ -z "$KERNEL_RELEASE" ]]; then
-        if [[ ! -d "$KERNEL_SRC_DIR" ]]; then
-            log_error "KERNEL_SRC_DIR='$KERNEL_SRC_DIR' does not exist; cannot resolve kernel release"
-            return 1
-        fi
-        KERNEL_RELEASE=$(cd "$KERNEL_SRC_DIR" && make -s kernelrelease)
+    # Already resolved — derived names are consistent with the cached KERNEL_RELEASE.
+    [[ -n "$KERNEL_RELEASE" ]] && return 0
+    if [[ ! -d "$KERNEL_SRC_DIR" ]]; then
+        log_error "KERNEL_SRC_DIR='$KERNEL_SRC_DIR' does not exist; cannot resolve kernel release"
+        return 1
     fi
+    KERNEL_RELEASE=$(cd "$KERNEL_SRC_DIR" && make -s kernelrelease)
     KERNEL_NAME="vmlinux-${KERNEL_RELEASE}-${WSLK_ARCH}"
     MODULES_NAME="modules-${KERNEL_RELEASE}-${WSLK_ARCH}.vhdx"
     MODULES_VHDX_PATH="$KERNEL_SRC_DIR/modules.vhdx"
