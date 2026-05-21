@@ -135,7 +135,7 @@ fetch_available_versions() {
 detect_latest_version() {
     local repo="$1"
     local latest
-    latest=$(fetch_available_versions "$repo" "^wsl-" 2>/dev/null | head -1) || true
+    latest=$(fetch_available_versions "$repo" "^wsl-" | head -1) || true
     if [[ -z "$latest" ]]; then
         log_warn "Could not detect latest version from $repo; using fallback"
         echo "wsl-7.0-rolling"
